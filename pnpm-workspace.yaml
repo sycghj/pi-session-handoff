@@ -1,0 +1,10 @@
+# This repository is standalone, not a member of any parent workspace. The file
+# exists so pnpm treats this directory as its own workspace root instead of
+# walking up into a parent checkout that happens to contain it.
+packages: []
+
+# Postinstall scripts are denied by default; these dependencies need theirs to
+# work (mirrors the parent repo's allowlist).
+allowBuilds:
+  '@google/genai': true
+  protobufjs: true

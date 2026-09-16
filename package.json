@@ -1,0 +1,43 @@
+{
+  "name": "@sycghj/pi-session-handoff",
+  "version": "0.1.0",
+  "description": "Pi extension: hand off a session to a fresh one with an agent-written handoff document instead of lossy compaction.",
+  "type": "module",
+  "keywords": [
+    "pi-package",
+    "pi",
+    "pi-coding-agent",
+    "pi-extension",
+    "session",
+    "handoff",
+    "context"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=22"
+  },
+  "files": [
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "pi": {
+    "extensions": [
+      "./src/index.ts"
+    ]
+  },
+  "scripts": {
+    "check": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "^0.84.4",
+    "@types/node": "^22.20.2",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.11"
+  }
+}
