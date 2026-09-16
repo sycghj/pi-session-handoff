@@ -122,6 +122,10 @@ export async function runHandoff(
   });
   const chain = walkSessionChain(sessionFile);
 
+  // Only the run this handoff triggered may supply the document: a stale
+  // assistant message from an earlier turn must never become the handoff.
+  const entriesBefore = ctx.sessionManager.getBranch().length;
+
   waiter.arm();
   pi.sendUserMessage(
     buildHandoffInstruction({
@@ -133,7 +137,9 @@ export async function runHandoff(
   );
   await waiter.wait();
 
-  const reply = findLastAssistantReply(ctx.sessionManager.getBranch());
+  const reply = findLastAssistantReply(
+    ctx.sessionManager.getBranch().slice(entriesBefore),
+  );
   if (reply?.stopReason === "aborted") {
     notify(ctx, "交接已取消（回合被中断）", "warning");
     return { status: "cancelled", reason: "回合被中断" };

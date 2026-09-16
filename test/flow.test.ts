@@ -12,10 +12,7 @@ import {
   type ReplacementContext,
   runHandoff,
 } from "../src/handoff/flow.js";
-import {
-  createSettledWaiter,
-  type SettledWaiter,
-} from "../src/settled-waiter.js";
+import { createSettledWaiter } from "../src/settled-waiter.js";
 
 let dir: string;
 
@@ -71,6 +68,9 @@ interface FakeOptions {
   sessionDir?: string;
   sessionId?: string;
   cwd?: string;
+  /** Entries already in the session before the handoff run. */
+  branchBefore?: SessionEntry[];
+  /** Entries the handoff run appends — i.e. the agent's reply. */
   branch?: SessionEntry[];
   idle?: boolean;
   hasUI?: boolean;
@@ -78,20 +78,31 @@ interface FakeOptions {
   kickoffFails?: boolean;
 }
 
-function createFakeContext(options: FakeOptions = {}) {
+/**
+ * Fake command context plus a fake `pi` whose `sendUserMessage` behaves like a
+ * real run: it appends the run's entries to the branch before signalling settle.
+ */
+function createHarness(options: FakeOptions = {}) {
   const notifications: Array<{ message: string; level: string }> = [];
   const appended: string[] = [];
   const kickoffs: string[] = [];
   const requests: NewSessionRequest[] = [];
+  const sent: string[] = [];
+  const writes: Array<{ file: string; content: string }> = [];
+  const dirs: string[] = [];
+  const replyEntries = options.branch ?? [];
   let waitForIdleCalls = 0;
+  let branch = options.branchBefore ?? [];
+
+  const waiter = createSettledWaiter();
+
+  const notify = (message: string, level = "info") => {
+    notifications.push({ message, level });
+  };
 
   const ctx = {
     hasUI: options.hasUI ?? true,
-    ui: {
-      notify: (message: string, level = "info") => {
-        notifications.push({ message, level });
-      },
-    },
+    ui: { notify },
     cwd: options.cwd ?? "/work/project",
     isIdle: () => options.idle ?? true,
     waitForIdle: async () => {
@@ -101,7 +112,7 @@ function createFakeContext(options: FakeOptions = {}) {
       getSessionFile: () => options.sessionFile,
       getSessionDir: () => options.sessionDir ?? join(dir, "sessions"),
       getSessionId: () => options.sessionId ?? "sid-1",
-      getBranch: () => options.branch ?? [],
+      getBranch: () => branch,
     },
     newSession: async (request: NewSessionRequest = {}) => {
       requests.push(request);
@@ -117,14 +128,11 @@ function createFakeContext(options: FakeOptions = {}) {
 
       const replacement = {
         hasUI: options.hasUI ?? true,
-        ui: {
-          notify: (message: string, level = "info") => {
-            notifications.push({ message, level });
-          },
-        },
+        ui: { notify },
         sendUserMessage: async (content: string) => {
-          if (options.kickoffFails === true)
+          if (options.kickoffFails === true) {
             throw new Error("model unavailable");
+          }
           kickoffs.push(content);
         },
       } as unknown as ReplacementContext;
@@ -134,13 +142,52 @@ function createFakeContext(options: FakeOptions = {}) {
     },
   } as unknown as HandoffContext;
 
+  const pi = {
+    sendUserMessage: (content: string) => {
+      sent.push(content);
+      branch = [...branch, ...replyEntries];
+      waiter.settle();
+    },
+  };
+
   return {
     ctx,
+    pi,
+    waiter,
+    sent,
+    writes,
+    dirs,
     notifications,
     appended,
     kickoffs,
     requests,
     waitForIdleCalls: () => waitForIdleCalls,
+    run: (
+      args = "",
+      deps?: {
+        writeDocument?: (file: string, content: string) => void;
+        ensureDir?: (target: string) => void;
+      },
+    ) =>
+      runHandoff({
+        ctx,
+        pi,
+        waiter,
+        args,
+        deps: {
+          now: () => new Date("2026-09-16T13:42:16.000Z"),
+          writeDocument:
+            deps?.writeDocument ??
+            ((file, content) => {
+              writes.push({ file, content });
+            }),
+          ensureDir:
+            deps?.ensureDir ??
+            ((target) => {
+              dirs.push(target);
+            }),
+        },
+      }),
   };
 }
 
@@ -158,55 +205,10 @@ function textOf(content: unknown): string {
   return String(content);
 }
 
-function createFakePi(waiter: SettledWaiter) {
-  const sent: string[] = [];
-  return {
-    sent,
-    pi: {
-      sendUserMessage: (content: string) => {
-        sent.push(content);
-        waiter.settle();
-      },
-    },
-  };
-}
-
-function setup(options: FakeOptions = {}) {
-  const fake = createFakeContext(options);
-  const waiter = createSettledWaiter();
-  const { sent, pi } = createFakePi(waiter);
-  const writes: Array<{ file: string; content: string }> = [];
-  const dirs: string[] = [];
-
-  return {
-    ...fake,
-    sent,
-    writes,
-    dirs,
-    run: (args = "") =>
-      runHandoff({
-        ctx: fake.ctx,
-        pi,
-        waiter,
-        args,
-        deps: {
-          now: () => new Date("2026-09-16T13:42:16.000Z"),
-          writeDocument: (file, content) => {
-            writes.push({ file, content });
-          },
-          ensureDir: (target) => {
-            dirs.push(target);
-          },
-        },
-      }),
-  };
-}
-
 describe("runHandoff — success path", () => {
   it("stores the document, replaces the session, and continues automatically", async () => {
-    const current = currentSession();
-    const harness = setup({
-      sessionFile: current,
+    const harness = createHarness({
+      sessionFile: currentSession(),
       branch: [assistantEntry(GOOD_BODY)],
     });
 
@@ -231,7 +233,7 @@ describe("runHandoff — success path", () => {
       cwd: "/work",
       parentSession: root,
     });
-    const harness = setup({
+    const harness = createHarness({
       sessionFile: current,
       branch: [assistantEntry(GOOD_BODY)],
     });
@@ -247,7 +249,7 @@ describe("runHandoff — success path", () => {
   });
 
   it("asks the current agent for the body without asking it to touch a file", async () => {
-    const harness = setup({
+    const harness = createHarness({
       sessionFile: currentSession(),
       branch: [assistantEntry(GOOD_BODY)],
     });
@@ -263,7 +265,7 @@ describe("runHandoff — success path", () => {
 
   it("records the parent session and injects the document plus the kickoff", async () => {
     const current = currentSession();
-    const harness = setup({
+    const harness = createHarness({
       sessionFile: current,
       branch: [assistantEntry(GOOD_BODY)],
     });
@@ -280,7 +282,7 @@ describe("runHandoff — success path", () => {
   });
 
   it("waits for an in-flight turn before asking for the handoff", async () => {
-    const harness = setup({
+    const harness = createHarness({
       sessionFile: currentSession(),
       idle: false,
       branch: [assistantEntry(GOOD_BODY)],
@@ -295,7 +297,7 @@ describe("runHandoff — success path", () => {
 
 describe("runHandoff — refusal paths", () => {
   it("fails without a persisted session file", async () => {
-    const harness = setup({
+    const harness = createHarness({
       sessionFile: undefined,
       branch: [assistantEntry(GOOD_BODY)],
     });
@@ -311,7 +313,7 @@ describe("runHandoff — refusal paths", () => {
   });
 
   it("cancels when the handoff turn was aborted", async () => {
-    const harness = setup({
+    const harness = createHarness({
       sessionFile: currentSession(),
       branch: [assistantEntry("partial", "aborted")],
     });
@@ -324,7 +326,10 @@ describe("runHandoff — refusal paths", () => {
   });
 
   it("fails when the agent produced no text", async () => {
-    const harness = setup({ sessionFile: currentSession(), branch: [] });
+    const harness = createHarness({
+      sessionFile: currentSession(),
+      branch: [],
+    });
 
     const outcome = await harness.run();
 
@@ -335,8 +340,30 @@ describe("runHandoff — refusal paths", () => {
     expect(harness.requests).toEqual([]);
   });
 
+  it("does not reuse an earlier assistant reply when the handoff produced no text", async () => {
+    const stale = assistantEntry(
+      `# Handoff: unrelated earlier work\n\n${"Old summary text long enough to pass validation. ".repeat(6).trim()}`,
+    );
+    const harness = createHarness({
+      sessionFile: currentSession(),
+      branchBefore: [stale],
+      // The handoff run ends on a tool-only assistant message: no body.
+      branch: [assistantEntry("", "toolUse")],
+    });
+
+    const outcome = await harness.run();
+
+    expect(harness.sent).toHaveLength(1);
+    expect(outcome).toEqual({
+      status: "failed",
+      reason: expect.stringContaining("没有输出交接文档"),
+    });
+    expect(harness.writes).toEqual([]);
+    expect(harness.requests).toEqual([]);
+  });
+
   it("fails when the body is too short to be a handoff", async () => {
-    const harness = setup({
+    const harness = createHarness({
       sessionFile: currentSession(),
       branch: [assistantEntry("# Handoff: x\n\nnope")],
     });
@@ -352,36 +379,27 @@ describe("runHandoff — refusal paths", () => {
   });
 
   it("fails when the document cannot be written", async () => {
-    const fake = createFakeContext({
+    const harness = createHarness({
       sessionFile: currentSession(),
       branch: [assistantEntry(GOOD_BODY)],
     });
-    const waiter = createSettledWaiter();
-    const { pi } = createFakePi(waiter);
 
-    const outcome = await runHandoff({
-      ctx: fake.ctx,
-      pi,
-      waiter,
-      args: "",
-      deps: {
-        now: () => new Date("2026-09-16T13:42:16.000Z"),
-        ensureDir: () => {
-          throw new Error("EACCES");
-        },
-        writeDocument: () => {},
+    const outcome = await harness.run("", {
+      ensureDir: () => {
+        throw new Error("EACCES");
       },
+      writeDocument: () => {},
     });
 
     expect(outcome).toEqual({
       status: "failed",
       reason: expect.stringContaining("EACCES"),
     });
-    expect(fake.requests).toEqual([]);
+    expect(harness.requests).toEqual([]);
   });
 
   it("reports a cancelled replacement while keeping the document", async () => {
-    const harness = setup({
+    const harness = createHarness({
       sessionFile: currentSession(),
       branch: [assistantEntry(GOOD_BODY)],
       newSessionCancelled: true,
@@ -397,7 +415,7 @@ describe("runHandoff — refusal paths", () => {
   });
 
   it("still completes when the kickoff turn cannot start", async () => {
-    const harness = setup({
+    const harness = createHarness({
       sessionFile: currentSession(),
       branch: [assistantEntry(GOOD_BODY)],
       kickoffFails: true,
@@ -412,7 +430,7 @@ describe("runHandoff — refusal paths", () => {
   });
 
   it("stays silent when the mode has no UI", async () => {
-    const harness = setup({
+    const harness = createHarness({
       sessionFile: currentSession(),
       hasUI: false,
       branch: [assistantEntry("# Handoff: x\n\nnope")],
