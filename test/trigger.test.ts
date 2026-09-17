@@ -44,7 +44,10 @@ describe("createAutoTrigger — threshold", () => {
 
     expect(sent).toHaveLength(1);
     expect(sent[0]?.content).toContain("/handoff");
-    expect(sent[0]?.options).toEqual({ deliverAs: "followUp" });
+    expect(sent[0]?.options).toEqual({
+      deliverAs: "followUp",
+      expandPromptTemplates: true,
+    });
   });
 
   it("does not fire below the threshold", () => {

@@ -28,6 +28,8 @@ export default function piSessionHandoff(pi: ExtensionAPI): void {
     env: process.env as Record<string, string | undefined>,
   });
 
+  let handoffInFlight = false;
+
   pi.on("agent_settled", async (event, ctx) => {
     waiter.settle();
     autoTrigger.check(ctx);
@@ -37,18 +39,35 @@ export default function piSessionHandoff(pi: ExtensionAPI): void {
     description:
       "Hand off this session to a fresh one: the agent writes a handoff document, then the new session continues automatically",
     handler: async (args, ctx) => {
-      await runHandoff({ ctx, pi, waiter, args });
+      // A tool-initiated handoff and a threshold fire can overlap (the tool
+      // queues the command mid-run; the trigger fires at the run's settle),
+      // and a manual /handoff can race either. Exactly one may proceed.
+      if (handoffInFlight) return;
+      handoffInFlight = true;
+      try {
+        await runHandoff({ ctx, pi, waiter, args });
+      } finally {
+        handoffInFlight = false;
+      }
     },
   });
 
   pi.registerTool(
     buildHandoffToolDefinition({
       requestHandoff: (command) => {
-        pi.sendUserMessage(command, { deliverAs: "followUp" });
+        // `expandPromptTemplates: true` is required: without it the command
+        // text reaches the model as a plain user message and the handler
+        // never runs. With it, `prompt()` dispatches the extension command
+        // immediately — even mid-run — and `runHandoff` waits for the
+        // current run to settle before taking over.
+        pi.sendUserMessage(command, {
+          deliverAs: "followUp",
+          expandPromptTemplates: true,
+        });
       },
       isIdle: () => {
         // The tool executes mid-run, so the agent is never idle here; the
-        // follow-up delivery is exactly what we want.
+        // command handler's own waitForIdle covers the handoff timing.
         return true;
       },
     }),

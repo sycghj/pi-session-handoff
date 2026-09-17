@@ -33,7 +33,10 @@ export interface TriggerContext extends Notifier {
 export interface TriggerSender {
   sendUserMessage(
     content: string,
-    options?: { deliverAs?: "steer" | "followUp" },
+    options?: {
+      deliverAs?: "steer" | "followUp";
+      expandPromptTemplates?: boolean;
+    },
   ): void;
 }
 
@@ -68,8 +71,13 @@ export function createAutoTrigger(deps: AutoTriggerDeps): AutoTrigger {
       armed = false;
 
       notify(ctx, `上下文已达 ${Math.round(percent)}%，自动交接中…`, "info");
+      // `expandPromptTemplates` must be true: the extension API's
+      // `sendUserMessage` defaults it to false, and without expansion the
+      // "/handoff …" text is sent to the model as a plain user message —
+      // the command handler never runs.
       deps.sendUserMessage("/handoff 自动交接（上下文接近上限）", {
         deliverAs: "followUp",
+        expandPromptTemplates: true,
       });
     },
   };
