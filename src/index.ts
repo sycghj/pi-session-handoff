@@ -12,14 +12,25 @@
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { runHandoff } from "./handoff/flow.js";
+import { buildHandoffToolDefinition } from "./handoff/tool.js";
+import { createAutoTrigger } from "./handoff/trigger.js";
 import { createSettledWaiter } from "./settled-waiter.js";
 
 export default function piSessionHandoff(pi: ExtensionAPI): void {
   // `pi.sendUserMessage()` is fire-and-forget, so the flow needs a settle
   // signal from the event stream to know when the handoff run has finished.
   const waiter = createSettledWaiter();
-  pi.on("agent_settled", async () => {
+
+  const autoTrigger = createAutoTrigger({
+    sendUserMessage: (content, options) => {
+      pi.sendUserMessage(content, options);
+    },
+    env: process.env as Record<string, string | undefined>,
+  });
+
+  pi.on("agent_settled", async (event, ctx) => {
     waiter.settle();
+    autoTrigger.check(ctx);
   });
 
   pi.registerCommand("handoff", {
@@ -29,4 +40,17 @@ export default function piSessionHandoff(pi: ExtensionAPI): void {
       await runHandoff({ ctx, pi, waiter, args });
     },
   });
+
+  pi.registerTool(
+    buildHandoffToolDefinition({
+      requestHandoff: (command) => {
+        pi.sendUserMessage(command, { deliverAs: "followUp" });
+      },
+      isIdle: () => {
+        // The tool executes mid-run, so the agent is never idle here; the
+        // follow-up delivery is exactly what we want.
+        return true;
+      },
+    }),
+  );
 }
