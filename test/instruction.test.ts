@@ -92,6 +92,22 @@ describe("buildHandoffInstruction", () => {
       "language this conversation has been conducted in",
     );
   });
+
+  it("demands the full set of operational constraints, including read scopes and privacy", () => {
+    const instruction = buildHandoffInstruction({
+      targetFile: "/sessions/handoffs/h.md",
+      sessionFile: "/sessions/current.jsonl",
+      chain,
+      focus: undefined,
+    });
+
+    expect(instruction).toContain("**Constraints & boundaries**");
+    expect(instruction).toContain("where the facts in this document came from");
+    expect(instruction).toContain("which paths this work may read");
+    expect(instruction).toContain("never touch, including privacy directories");
+    expect(instruction).toContain("must not be sent to external services");
+    expect(instruction).toContain("need explicit user confirmation");
+  });
 });
 
 describe("buildHandoffInjection", () => {
@@ -120,6 +136,7 @@ describe("buildContinueInstruction", () => {
       'Start with the first item under "Next tasks"',
     );
     expect(instruction).toContain("do not re-ask what it already settles");
+    expect(instruction).toContain('Honor "Constraints & boundaries" exactly');
     expect(instruction).toContain("`/sessions/current.jsonl`");
   });
 

@@ -15,6 +15,7 @@ export const REQUIRED_SECTIONS = [
   "## Goal & background",
   "## Current state",
   "## Decisions & rationale",
+  "## Constraints & boundaries",
   "## Next tasks",
   "## Session chain",
   "## Key files & commands",
@@ -68,6 +69,7 @@ Cover:
 - **Goal & background** — what we are trying to achieve and why, including the issue/PR/plan this work belongs to.
 - **Current state** — what is done, what is verified, and what is left half-finished. Be concrete: file paths, commit SHAs, branch names, commands already run and their results.
 - **Decisions & rationale** — choices already made and the reason for each, so the next session does not relitigate them.
+- **Constraints & boundaries** — every operational constraint that governs this work, so the next session honors it instead of re-deriving it. Include: where the facts in this document came from (data sources, how they were verified); which paths this work may read; which paths it must never touch, including privacy directories and anything off-limits even to listing/scan; write boundaries; anything that must not be sent to external services; commands or operations that are forbidden or need explicit user confirmation; and any other standing rule the next session would otherwise have to guess. Record them even when they seem obvious — the next session cannot re-derive them from the conversation, and guessing is how boundaries get crossed.
 - **Next tasks** — an ordered, actionable list: the first thing the next session should do, then the rest. If verification or shipping steps remain, say so explicitly.
 - **Session chain** — where earlier history lives. Record these paths:
   - current session: \`${options.sessionFile}\`
@@ -120,6 +122,7 @@ export function buildContinueInstruction(
 
 - Start with the first item under "Next tasks" and work through the list.
 - Treat the handoff as authoritative: do not re-ask what it already settles, and do not re-explore what it already establishes.
+- Honor "Constraints & boundaries" exactly — read/write scopes, privacy rules, data sources, forbidden operations. They were recorded so you would not have to guess; re-deriving or exceeding them is a boundary violation, not initiative.
 - When you need detail the handoff omitted, read the previous session file \`${options.sessionFile}\` (and the handoff document at \`${options.targetFile}\`) rather than guessing.
 
 ${earlier}`;

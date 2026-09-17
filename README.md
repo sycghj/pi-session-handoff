@@ -82,7 +82,9 @@ PI_HANDOFF_AUTO_PERCENT=off pi
 | `parent_sessions` | 前序会话文件列表，由近到远 |
 | `focus` | 仅在你传了参数时出现 |
 
-正文由 Agent 写，固定章节：`Goal & background`、`Current state`、`Decisions & rationale`、`Next tasks`、`Session chain`、`Key files & commands`。
+正文由 Agent 写，固定章节：`Goal & background`、`Current state`、`Decisions & rationale`、`Constraints & boundaries`、`Next tasks`、`Session chain`、`Key files & commands`。
+
+其中 `Constraints & boundaries` 要求把所有重要的操作性约束写进文档：事实数据来源、允许读取的路径、禁止碰的路径（含隐私目录，连扫描都不允许）、写入边界、禁止外发的内容、需要确认的命令——新会话不需要也不能重新推导这些边界。
 
 正文章节名固定为英文，正文语言跟随对话本身。
 
