@@ -42,6 +42,28 @@
 
 `/handoff` 会先等当前回合跑完再开始，所以流式输出中途触发也没关系。
 
+## 自动触发
+
+上下文用量达到阈值（默认 80%）时，扩展会自动排队一次 `/handoff`。交接在当前回合结束后才开始，不会打断流式输出。
+
+阈值早于 Pi 自己的自动压缩（约 92%），所以交接总是先于压缩发生——两者不会打架。如果你希望完全禁止自动压缩，可以在 Pi 设置里把 `compaction.enabled` 设为 `false`。
+
+配置方式：环境变量 `PI_HANDOFF_AUTO_PERCENT`，取值 1–100 的整数，或 `off` 关闭自动触发。
+
+```bash
+# 90% 才触发
+PI_HANDOFF_AUTO_PERCENT=90 pi
+
+# 关闭自动触发
+PI_HANDOFF_AUTO_PERCENT=off pi
+```
+
+每次跨阈值只触发一次；交接完成后（新会话从接近 0% 开始）自动复位。
+
+## 模型主动调用
+
+扩展注册了一个 `handoff` 工具，模型可以在合适的时候自己调用——比如上下文快满了，或者工作即将跨过一个大的阶段边界。工具不直接执行交接，而是排队 `/handoff` 命令，由命令处理器在当前回合结束后执行。
+
 ## 交接文档
 
 位置：`~/.pi/agent/sessions/--<cwd>--/handoffs/<timestamp>_<sessionId>.md`。
@@ -103,6 +125,8 @@ pnpm test        # vitest run
 给未来的维护者留几条关键决定：
 
 - 生成与替换是两个独立步骤（`src/handoff/flow.ts` 里先后调用），所以「接近上下文上限时自动触发」只是再加一个触发点，核心不用改。
+- 自动触发（`src/handoff/trigger.ts`）在 `agent_settled` 时检查 `ctx.getContextUsage()`，超过阈值就排队 `/handoff` 作为 follow-up。触发后进入冷却，直到用量回落（新会话开始）才重新武装——避免交接失败后反复触发。
+- `handoff` 工具（`src/handoff/tool.ts`）让模型可以主动调用交接。工具本身不执行交接，只排队 `/handoff` 命令，由命令处理器在回合结束后执行。
 - 完成信号用 `agent_settled` 事件而不是 `ctx.waitForIdle()`：`pi.sendUserMessage()` 是发射后不管的（返回 `void`），run 启动前 `waitForIdle()` 会直接返回，存在竞态；`agent_settled` 在 run（含重试与自动压缩续跑）彻底结束后才触发。
 - 会话替换后旧 `ctx` 即失效，所以替换之后的所有 UI 动作都走 `withSession` 拿到的替换上下文。
 - 文档正文的校验只做「足够长 + 含 markdown 标题」这类结构性检查，不猜模型措辞。
